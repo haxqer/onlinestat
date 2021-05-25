@@ -28,8 +28,10 @@ func (h *Hub) run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
+			StatData.Online(client.uid)
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
+				StatData.Offline(client.uid)
 				delete(h.clients, client)
 				close(client.send)
 			}

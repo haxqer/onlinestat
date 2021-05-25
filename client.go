@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -42,6 +43,8 @@ type Client struct {
 
 	// Buffered channel of outbound messages.
 	send chan []byte
+
+	uid string
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -118,12 +121,19 @@ func (c *Client) writePump() {
 
 // serveWs handles websocket requests from the peer.
 func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+	uid := r.URL.Query().Get("uid")
+	if matched, _ := regexp.MatchString(
+		`^[0-9a-fA-F]{32}$`,
+		uid); !matched {
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), uid: uid}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
