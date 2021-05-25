@@ -125,6 +125,7 @@ func (s *StatDataStruct) Online(k string) {
 	nowTime := time.Now().Unix()
 	if x, found := s.data[k]; found {
 		x.OnlineAt = nowTime
+		x.CalculateAt = nowTime
 		x.OfflineAt = 0
 		s.data[k] = x
 	} else {
