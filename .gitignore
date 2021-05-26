@@ -15,4 +15,5 @@ runtime/
 .DS_Store
 .buildpath
 *.patch
+data/
 

@@ -35,6 +35,8 @@ func serveHome2(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+
+
 	flag.Parse()
 	hub := newHub()
 	go hub.run()

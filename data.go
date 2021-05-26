@@ -1,14 +1,17 @@
 package main
 
 import (
+	"fmt"
+	"github.com/haxqer/gintools/file"
 	"sync"
 	"time"
 )
 
 type StatDataStruct struct {
-	mu          sync.RWMutex
-	data        map[string]*UserStat
-	onlineIndex map[string]int
+	mu             sync.RWMutex
+	Data           map[string]*UserStat
+	OnlineIndex    map[string]int
+	ApiOnlineIndex map[string]int
 }
 
 type UserStat struct {
@@ -19,41 +22,108 @@ type UserStat struct {
 	TodayOnline int64
 }
 
+const (
+	location      = "Asia/Shanghai"
+	fileName      = "data/store" // 持久化文件的路径, 可以为 相对路径或者绝对路径
+	calInterval   = 1            // 计算行为发生的间隔, 单位为 秒
+	storeInterval = 10           // 持久化行为发生的时间间隔, 单位为 秒
+)
+
 var (
-	shanghai   *time.Location
-	StatData   *StatDataStruct
-	calLimiter <-chan time.Time
+	shanghai     *time.Location
+	StatData     *StatDataStruct
+	calLimiter   <-chan time.Time
+	storeLimiter <-chan time.Time
 )
 
 func init() {
 	var err error
-	shanghai, err = time.LoadLocation("Asia/Shanghai")
+	shanghai, err = time.LoadLocation(location)
 	if err != nil {
 		panic(err)
 	}
 
 	StatData = &StatDataStruct{
-		data:        make(map[string]*UserStat),
-		onlineIndex: make(map[string]int),
+		Data:        make(map[string]*UserStat),
+		OnlineIndex: make(map[string]int),
 	}
 
-	calLimiter = time.After(2 * time.Second)
+	if notExist := file.CheckNotExist(fileName); !notExist {
+		if err := load(fileName, StatData); err != nil {
+			panic(err)
+		}
+	} else {
+		err = store(fileName, StatData.Snapshot())
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	tickCalData()
+	tickStoreData()
 }
 
 func tickCalData() {
+	interval := calInterval * time.Second
+	calLimiter = time.After(interval)
 	go func() {
 		for {
 			<-calLimiter
 			StatData.Ticker()
+			calLimiter = time.After(interval)
 		}
 	}()
+}
+
+func tickStoreData() {
+	interval := storeInterval * time.Second
+	storeLimiter = time.After(interval)
+	go func() {
+		for {
+			<-storeLimiter
+			err := store(fileName, StatData.Snapshot())
+			if err != nil {
+				fmt.Printf("%+v", err)
+			}
+			storeLimiter = time.After(interval)
+		}
+	}()
+}
+
+func (s *StatDataStruct) Snapshot() *StatDataStruct {
+	//onlineIndex := s.GetOnlineIndex()
+	onlineIndex := make(map[string]int)
+	totalIndex := s.GetTotalIndex()
+	data := make(map[string]*UserStat)
+	//nowTs := time.Now().Unix()
+	for k := range totalIndex {
+		v := s.Get(k)
+		if v != nil {
+			//offlineAt := nowTs
+			//if v.OfflineAt > 0 {
+			//	offlineAt = v.OfflineAt
+			//}
+
+			data[k] = &UserStat{
+				OnlineAt:    v.OnlineAt,
+				OfflineAt:   v.OfflineAt,
+				CalculateAt: v.CalculateAt,
+				TotalOnline: v.TotalOnline,
+				TodayOnline: v.TodayOnline,
+			}
+		}
+	}
+
+	return &StatDataStruct{
+		Data:        data,
+		OnlineIndex: onlineIndex,
+	}
 }
 
 func (s *StatDataStruct) Get(k string) *UserStat {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if x, found := s.data[k]; found {
+	if x, found := s.Data[k]; found {
 		return x
 	}
 	return nil
@@ -63,7 +133,7 @@ func (s *StatDataStruct) GetOnlineIndex() map[string]int {
 	m := make(map[string]int)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for k := range s.onlineIndex {
+	for k := range s.OnlineIndex {
 		m[k] = 1
 	}
 	return m
@@ -73,7 +143,7 @@ func (s *StatDataStruct) GetTotalIndex() map[string]int {
 	m := make(map[string]int)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for k := range s.data {
+	for k := range s.Data {
 		m[k] = 1
 	}
 	return m
@@ -82,7 +152,7 @@ func (s *StatDataStruct) GetTotalIndex() map[string]int {
 func (s *StatDataStruct) Ticker() {
 	m := make(map[string]int)
 	s.mu.RLock()
-	for k := range s.onlineIndex {
+	for k := range s.OnlineIndex {
 		m[k] = 1
 	}
 	s.mu.RUnlock()
@@ -90,14 +160,13 @@ func (s *StatDataStruct) Ticker() {
 	for k := range m {
 		s.Cal(k)
 	}
-	calLimiter = time.After(2 * time.Second)
 }
 
 func (s *StatDataStruct) Cal(k string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	nowTs := time.Now().Unix()
-	if x, found := s.data[k]; found {
+	if x, found := s.Data[k]; found {
 		if x.OfflineAt > x.OnlineAt || x.CalculateAt == 0 {
 			return
 		}
@@ -115,7 +184,7 @@ func (s *StatDataStruct) Cal(k string) {
 			x.TodayOnline += nowTs - x.CalculateAt
 		}
 		x.CalculateAt = nowTs
-		s.data[k] = x
+		s.Data[k] = x
 	}
 }
 
@@ -123,11 +192,11 @@ func (s *StatDataStruct) Online(k string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	nowTime := time.Now().Unix()
-	if x, found := s.data[k]; found {
+	if x, found := s.Data[k]; found {
 		x.OnlineAt = nowTime
 		x.CalculateAt = nowTime
 		x.OfflineAt = 0
-		s.data[k] = x
+		s.Data[k] = x
 	} else {
 
 		userInfo := &UserStat{
@@ -137,17 +206,17 @@ func (s *StatDataStruct) Online(k string) {
 			TotalOnline: 0,
 			TodayOnline: 0,
 		}
-		s.data[k] = userInfo
+		s.Data[k] = userInfo
 	}
-	s.onlineIndex[k] = 1
+	s.OnlineIndex[k] = 1
 }
 
 func (s *StatDataStruct) Offline(k string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.onlineIndex, k)
+	delete(s.OnlineIndex, k)
 	nowTs := time.Now().Unix()
-	if x, found := s.data[k]; found {
+	if x, found := s.Data[k]; found {
 		if x.OfflineAt > x.OnlineAt || x.CalculateAt == 0 {
 			return
 		}
@@ -166,7 +235,7 @@ func (s *StatDataStruct) Offline(k string) {
 
 		x.OfflineAt = nowTs
 		x.CalculateAt = nowTs
-		s.data[k] = x
+		s.Data[k] = x
 	}
 }
 
