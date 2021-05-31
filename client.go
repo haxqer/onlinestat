@@ -127,7 +127,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		uid); !matched {
 		return
 	}
-	
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -135,21 +135,16 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	}
 
 	if clientOld, ok := hub.clients[uid]; ok {
+		defer func() {
+			conn.WriteJSON(&ConnectErr{
+				Code: 400,
+				Msg:  "用户已在其他地方登陆",
+			})
+			conn.Close()
+		}()
 		clientOld.send <- []byte("您的密码已泄漏，请及时修改密码")
-		err := conn.WriteJSON(&ConnectErr{
-			Code: 400,
-			Msg:  "用户已在其他地方登陆",
-		})
-		if err != nil {
-			err := conn.Close()
-			if err != nil {
-				return
-			}
-			return
-		}
 		return
 	}
-
 
 	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), uid: uid}
 	client.hub.register <- client
