@@ -24,9 +24,9 @@ type UserStat struct {
 
 const (
 	location      = "Asia/Shanghai"
-	fileName      = "data/store" // 持久化文件的路径, 可以为 相对路径或者绝对路径
+	fileName      = "data/a.store" // 持久化文件的路径, 可以为 相对路径或者绝对路径
 	calInterval   = 1            // 计算行为发生的间隔, 单位为 秒
-	storeInterval = 10           // 持久化行为发生的时间间隔, 单位为 秒
+	storeInterval = 30           // 持久化行为发生的时间间隔, 单位为 秒
 )
 
 var (

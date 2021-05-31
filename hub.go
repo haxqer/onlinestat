@@ -2,7 +2,7 @@ package main
 
 type Hub struct {
 	// Registered clients.
-	clients map[*Client]bool
+	clients map[string]*Client
 
 	// Inbound messages from the clients.
 	broadcast chan []byte
@@ -19,7 +19,7 @@ func newHub() *Hub {
 		broadcast:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
+		clients:    make(map[string]*Client),
 	}
 }
 
@@ -27,21 +27,26 @@ func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.clients[client] = true
+			if _, ok := h.clients[client.uid]; ok {
+				StatData.Offline(client.uid)
+				delete(h.clients, client.uid)
+				close(client.send)
+			}
+			h.clients[client.uid] = client
 			StatData.Online(client.uid)
 		case client := <-h.unregister:
-			if _, ok := h.clients[client]; ok {
+			if _, ok := h.clients[client.uid]; ok {
 				StatData.Offline(client.uid)
-				delete(h.clients, client)
+				delete(h.clients, client.uid)
 				close(client.send)
 			}
 		case message := <-h.broadcast:
-			for client := range h.clients {
+			for _,client := range h.clients {
 				select {
 				case client.send <- message:
 				default:
 					close(client.send)
-					delete(h.clients, client)
+					delete(h.clients, client.uid)
 				}
 			}
 		}
