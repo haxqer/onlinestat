@@ -27,11 +27,6 @@ func (h *Hub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			if _, ok := h.clients[client.uid]; ok {
-				StatData.Offline(client.uid)
-				delete(h.clients, client.uid)
-				close(client.send)
-			}
 			h.clients[client.uid] = client
 			StatData.Online(client.uid)
 		case client := <-h.unregister:
@@ -41,7 +36,7 @@ func (h *Hub) run() {
 				close(client.send)
 			}
 		case message := <-h.broadcast:
-			for _,client := range h.clients {
+			for _, client := range h.clients {
 				select {
 				case client.send <- message:
 				default:

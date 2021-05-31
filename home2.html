@@ -46,8 +46,8 @@
                     item.innerHTML = "<b>Your uid: " + uid  +" </b>";
                     appendLog(item);
                 }
-
                 conn.onclose = function (evt) {
+                    console.log(evt)
                     var item = document.createElement("div");
                     item.innerHTML = "<b>Connection closed.</b>";
                     appendLog(item);

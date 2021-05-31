@@ -11,8 +11,13 @@ type UserOutputStat struct {
 	TodayOnline int64
 }
 
+type ConnectErr struct {
+	Code int
+	Msg  string
+}
+
 func isBeforeDawn(gap int64) bool {
-	if gap >=0 && gap < calInterval * 3 {
+	if gap >= 0 && gap < calInterval*3 {
 		return true
 	}
 	return false
@@ -21,8 +26,8 @@ func isBeforeDawn(gap int64) bool {
 func ServeOnlineUserList(w http.ResponseWriter, r *http.Request) {
 	todayBeginning := GetTodayBeginning()
 	nowTs := time.Now().Unix()
-	gap := nowTs-todayBeginning
-	
+	gap := nowTs - todayBeginning
+
 	onlineIndex := StatData.GetOnlineIndex()
 	sList := map[string]*UserOutputStat{}
 	for k := range onlineIndex {
@@ -47,7 +52,7 @@ func ServeOnlineUserList(w http.ResponseWriter, r *http.Request) {
 func ServeTotalUserList(w http.ResponseWriter, r *http.Request) {
 	todayBeginning := GetTodayBeginning()
 	nowTs := time.Now().Unix()
-	gap := nowTs-todayBeginning
+	gap := nowTs - todayBeginning
 
 	totalIndex := StatData.GetTotalIndex()
 	sList := map[string]*UserOutputStat{}
