@@ -25,8 +25,9 @@ type UserStat struct {
 const (
 	location      = "Asia/Shanghai"
 	fileName      = "data/a.store" // 持久化文件的路径, 可以为 相对路径或者绝对路径
-	calInterval   = 1            // 计算行为发生的间隔, 单位为 秒
-	storeInterval = 30           // 持久化行为发生的时间间隔, 单位为 秒
+	calInterval   = 1              // 计算行为发生的间隔, 单位为 秒
+	storeInterval = 30             // 持久化行为发生的时间间隔, 单位为 秒
+	clearGap      = 86400
 )
 
 var (
@@ -34,6 +35,7 @@ var (
 	StatData     *StatDataStruct
 	calLimiter   <-chan time.Time
 	storeLimiter <-chan time.Time
+	clearLimiter <-chan time.Time
 )
 
 func init() {
@@ -59,8 +61,22 @@ func init() {
 		}
 	}
 
+	tickClearData()
 	tickCalData()
 	tickStoreData()
+}
+
+func tickClearData() {
+	StatData.ClearData()
+	interval := 3 * time.Hour
+	clearLimiter = time.After(interval)
+	go func() {
+		for {
+			<-clearLimiter
+			StatData.ClearData()
+			clearLimiter = time.After(interval)
+		}
+	}()
 }
 
 func tickCalData() {
@@ -149,6 +165,19 @@ func (s *StatDataStruct) GetTotalIndex() map[string]int {
 	return m
 }
 
+func (s *StatDataStruct) ClearData() {
+	m := make(map[string]int)
+	s.mu.RLock()
+	for k := range s.Data {
+		m[k] = 1
+	}
+	s.mu.RUnlock()
+
+	for k := range m {
+		s.clearOldData(k)
+	}
+}
+
 func (s *StatDataStruct) Ticker() {
 	m := make(map[string]int)
 	s.mu.RLock()
@@ -160,6 +189,23 @@ func (s *StatDataStruct) Ticker() {
 	for k := range m {
 		s.Cal(k)
 	}
+}
+
+func (s *StatDataStruct) clearOldData(k string) {
+	v := s.Get(k)
+	if v == nil {
+		return
+	}
+	nowTs := time.Now().Unix()
+	gap := nowTs - v.CalculateAt
+	gap2 := nowTs - v.OnlineAt
+	if gap2 >= clearGap*2 && gap >= clearGap*2 {
+		s.mu.Lock()
+		delete(s.Data, k)
+		delete(s.OnlineIndex, k)
+		s.mu.Unlock()
+	}
+	return
 }
 
 func (s *StatDataStruct) Cal(k string) {
@@ -242,4 +288,9 @@ func (s *StatDataStruct) Offline(k string) {
 func GetTodayBeginning() int64 {
 	year, month, day := time.Now().Date()
 	return time.Date(year, month, day, 0, 0, 0, 0, shanghai).Unix()
+}
+
+func GetTomorrowBeginning() int64 {
+	year, month, day := time.Now().Date()
+	return time.Date(year, month, day+1, 0, 0, 0, 0, shanghai).Unix()
 }
